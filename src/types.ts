@@ -19,6 +19,10 @@ export interface SFTExample {
   response?: string;
   thought?: string; // used specifically for 'reasoning'
 
+  // Compatibility and custom fallback fields
+  userInput?: string;
+  output?: string;
+
   // Multi-turn fields
   messages?: SFTMessage[];
 
