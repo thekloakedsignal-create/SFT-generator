@@ -137,16 +137,16 @@ async function startServer() {
         return res.status(400).json({ error: 'Domain Task definition is required.' });
       }
 
-      // Key/URL/Model are stored in system environment
-      const effectiveDoKey = process.env.D0_INFERENCE_KEY || process.env.DO_INFERENCE_KEY;
+      // Key/URL/Model are supplied from UI settings or system environment
+      const effectiveDoKey = req.body.digitalOceanKey || process.env.D0_INFERENCE_KEY || process.env.DO_INFERENCE_KEY;
       if (!effectiveDoKey) {
-        return res.status(500).json({ error: 'System configuration error: DO_INFERENCE_KEY (or D0_INFERENCE_KEY) missing.' });
+        return res.status(400).json({ error: 'DigitalOcean Inference Key is required for SFT generation. Please configure DO_INFERENCE_KEY in your environment, or provide it via the Settings panel.' });
       }
-      const rawDoUrl = process.env.D0_INFERENCE_URL || process.env.DO_INFERENCE_URL;
+      const rawDoUrl = req.body.digitalOceanUrl || process.env.D0_INFERENCE_URL || process.env.DO_INFERENCE_URL;
       const effectiveDoUrl = (rawDoUrl && rawDoUrl.startsWith('http')) 
         ? rawDoUrl 
         : 'https://inference.do-ai.run/v1';
-      const effectiveDoModel = process.env.D0_INFERENCE_MODEL || process.env.DO_INFERENCE_MODEL || 'kimi-k2.6';
+      const effectiveDoModel = req.body.digitalOceanModel || process.env.D0_INFERENCE_MODEL || process.env.DO_INFERENCE_MODEL || 'kimi-k2.6';
 
       let schemaInstruction = '';
       if (templateType === 'user-response') {
@@ -339,15 +339,6 @@ YOUR CORE DUTIES & CONVERSATION TONE:
 
       const systemInstruction = `You are a world-class Document-to-SFT Converter. Your job is to digest the provided document text and extract core facts, guidelines, or instruction concepts, and output a valid JSON array.`;
 
-      const userPrompt = `You will turn these extracted elements into exactly ${count} highly unique, non-repetitive, high-quality SFT training examples.
-
-Each extracted example must perfectly follow these target behaviors:
-- Project Domain: ${domainTask}
-- Style & Formatting Rules: ${styleGuide || 'Default clear, correct, and authoritative.'}
-
-You must output a single valid JSON object containing an "examples" array matching the requested structure for: "${templateType}".
-Do not include any markdown formatting wrappers (like \`\`\`json or \`\`\`). Do not include any introductory or explanatory text. Just output the raw JSON object.`;
-
       const schemaInstruction = `
 The returned JSON must follow this exact structure:
 ${
@@ -382,14 +373,24 @@ ${
     }
   ]
 }`}
+`;
+
+      const userPrompt = `You will turn these extracted elements into exactly ${count} highly unique, non-repetitive, high-quality SFT training examples.
+
+Each extracted example must perfectly follow these target behaviors:
+- Project Domain: ${domainTask}
+- Style & Formatting Rules: ${styleGuide || 'Default clear, correct, and authoritative.'}
+
+You must output a single valid JSON object containing an "examples" array matching the requested structure for: "${templateType}".
+Do not include any markdown formatting wrappers (like \`\`\`json or \`\`\`). Do not include any introductory or explanatory text. Just output the raw JSON object.
+
+JSON SCHEMA REQUIREMENT:
+${schemaInstruction}
 
 Read this document carefully. Extract ${count} highly original and diverse scenarios or instruction tasks representing genuine knowledge in the document, and convert them to golden SFT training examples inside the required JSON schema.
 
 DOCUMENT CONTENT:
-${textContent}
-
-JSON SCHEMA REQUIREMENT:
-${schemaInstruction}`;
+${textContent}`;
 
       const effectiveDoKey = req.body.digitalOceanKey || process.env.D0_INFERENCE_KEY || process.env.DO_INFERENCE_KEY;
       const effectiveDoUrl = req.body.digitalOceanUrl || process.env.D0_INFERENCE_URL || process.env.DO_INFERENCE_URL || 'https://inference.do-ai.run/v1';
