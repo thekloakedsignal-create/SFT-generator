@@ -1,0 +1,6 @@
+{
+  "name": "SFT Training Data Generator",
+  "description": "An interactive workspace for synthesizing, configuring, reviewing, and exporting highly specific, customized Supervised Fine-Tuning (SFT) training datasets using Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
