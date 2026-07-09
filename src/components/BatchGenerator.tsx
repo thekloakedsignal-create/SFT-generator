@@ -12,6 +12,7 @@ interface BatchGeneratorProps {
     customGuidelines: string;
     systemPrompt: string;
     modelName: string;
+    category: string;
   }) => Promise<void>;
   isGenerating: boolean;
 }
@@ -44,6 +45,7 @@ export default function BatchGenerator({
   const [customGuidelines, setCustomGuidelines] = useState<string>('');
   const [systemPrompt, setSystemPrompt] = useState<string>('');
   const [modelName, setModelName] = useState<string>('kimi-k2.6');
+  const [category, setCategory] = useState<string>('General');
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
 
   // Cycle loading messages when generating
@@ -66,6 +68,7 @@ export default function BatchGenerator({
       customGuidelines,
       systemPrompt,
       modelName,
+      category: category.trim() || 'General',
     });
   };
 
@@ -136,14 +139,23 @@ export default function BatchGenerator({
             </div>
           </div>
 
-          {count >= 25 && (
-            <div className="bg-blue-500/10 border border-blue-500/20 p-2.5 rounded-lg text-[11px] text-blue-400 leading-normal">
-              <strong>Chunked Execution Active:</strong> Generating {count} items will execute in parallel/sequential batches of 5 to avoid prompt timeouts and guarantee extremely high-quality originality.
-            </div>
-          )}
-
           <div className="bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-lg text-[11px] text-amber-400 leading-normal">
             * All dataset generations are processed securely using DigitalOcean serverless GPU resources.
+          </div>
+
+          {/* Batch Category */}
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1.5 flex justify-between">
+              <span>Batch Category / Label</span>
+              <span className="text-[10px] text-slate-500">e.g., "SQL queries"</span>
+            </label>
+            <input
+              type="text"
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-amber-500"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              placeholder="Give this batch a category/label..."
+            />
           </div>
 
           {/* Diversity presets */}
@@ -194,14 +206,14 @@ export default function BatchGenerator({
             />
           </div>
 
-          {/* Additional Generation instructions */}
+          {/* System Prompt instructions */}
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1.5 flex justify-between">
               <span>System Prompt</span>
               <span className="text-[10px] text-slate-500">(Optional)</span>
             </label>
             <textarea
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-amber-500"
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-amber-500 font-sans"
               value={systemPrompt}
               onChange={(e) => setSystemPrompt(e.target.value)}
               placeholder="Define the behavior/persona for the assistant..."

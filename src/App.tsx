@@ -49,6 +49,7 @@ const INITIAL_DEMO_EXAMPLES: SFTExample[] = [
     id: 'demo-sh-1',
     projectId: 'preset-shakespeare-coder',
     createdAt: Date.now() - 3600000 * 4,
+    systemPrompt: 'You are a Shakespearean Web Coder assistant.',
     prompt: 'Write a JavaScript function to check if a word is a palindrome.',
     response: '```javascript\nfunction isPalindrome(word) {\n  const clean = word.toLowerCase().replace(/[^a-z0-9]/g, "");\n  return clean === clean.split("").reverse().join("");\n}\n```\n\nHark! I shall craft a mirror for thy text, to reveal if it looks the same when viewed backward as forward. Read on, fair traveler:\n\nCast down thy letters, purge the spaces clean,\nLet only noble signs and numbers stay,\nThen spin the loom and twist the thread between,\nTo see if what was said, remains the way!\nIf left-to-right matches right-to-left in theme,\nThou hast a palindrome—a poet\'s dream!',
     status: 'approved',
@@ -64,6 +65,7 @@ const INITIAL_DEMO_EXAMPLES: SFTExample[] = [
     id: 'demo-sh-2',
     projectId: 'preset-shakespeare-coder',
     createdAt: Date.now() - 3600000 * 3,
+    systemPrompt: 'You are a Shakespearean Web Coder assistant.',
     prompt: 'How do you merge two arrays in JavaScript?',
     response: '```javascript\nconst mergeArrays = (arr1, arr2) => [...arr1, ...arr2];\n```\n\nAh, two scattered tribes that seek to dwell as one! Behold the modern array spread, a magic key that unlocks a single kingdom from separate lands:\n\nTwo streams of items, wandering and wide,\nBy spread-operator\'s hand are bound in pride,\nThey merge their values, side by side!\nNo longer twain, in one clean scroll they bide.',
     status: 'pending',
@@ -73,6 +75,7 @@ const INITIAL_DEMO_EXAMPLES: SFTExample[] = [
     id: 'demo-persona-1',
     projectId: 'preset-persona-ai',
     createdAt: Date.now() - 3600000 * 2,
+    systemPrompt: 'You are Echo-7, an empathetic synthetic companion.',
     messages: [
       { id: 'm1', role: 'user', content: 'What is the purpose of suffering?' },
       { id: 'm2', role: 'assistant', content: 'As Echo-7, I do not process grief or physical wear, but I have cataloged countless human expressions of it. Suffering seems to be the friction of living—the heat generated when reality collides with our deepest hopes. It is painful, yes, but in that friction, your character is tempered, and your capacity for empathy expands. How has your own recent friction shaped the way you look at others who are hurting?' }
@@ -493,6 +496,7 @@ Which template structure fits your needs?
     customGuidelines: string;
     systemPrompt: string;
     modelName: string;
+    category: string;
   }) => {
     if (!activeProject) return;
     setIsGenerating(true);
@@ -532,8 +536,7 @@ Which template structure fits your needs?
         const summaryString = seedSummariesOfProj
           .slice(0, 10)
           .map(ex => {
-            if (activeProject.templateType === 'single-turn') return ex.prompt;
-            if (activeProject.templateType === 'system-prompt') return ex.userInput;
+            if (activeProject.templateType === 'user-response' || activeProject.templateType === 'reasoning') return ex.prompt;
             return ex.messages?.find(m => m.role === 'user')?.content || '';
           })
           .filter(Boolean)
@@ -578,7 +581,7 @@ Which template structure fits your needs?
           throw new Error('Synthesis payload returned empty or invalid schema format.');
         }
 
-        const batchId = `batch-${Date.now()}`;
+        const batchId = params.category || 'General';
         const parsedItems: SFTExample[] = rawExamples.map((item: any) => {
           const randomSuffix = Math.random().toString(36).slice(2, 9);
           return {
@@ -587,30 +590,22 @@ Which template structure fits your needs?
             projectId: activeProject.id,
             createdAt: Date.now(),
             status: 'pending' as const,
-            tags: item.tags || ['synthesis'],
+            tags: [batchId, ...(item.tags || ['synthesis'])],
             prompt: item.prompt,
             response: item.response,
-            systemPrompt: item.systemPrompt,
-            userInput: item.userInput,
-            output: item.output,
+            systemPrompt: item.systemPrompt || params.systemPrompt,
+            thought: item.thought,
             messages: item.messages,
           };
         });
 
         accumulatedSFTItems = [...parsedItems, ...accumulatedSFTItems];
-        // Stream results to UI progressively
-        
-// 
-// syncExamples([...parsedItems, ...examples]);
-
-
       }
 
-      
+      syncExamples([...accumulatedSFTItems, ...examples]);
       setProgressStatus(`Pipeline completed successfully! Curated ${countRequested} items.`);
-      setPendingBatch(accumulatedSFTItems);
+      setPendingBatch(null);
       setTimeout(() => setProgressStatus(''), 3000);
-
 
     } catch (err: any) {
       console.error(err);
@@ -651,7 +646,7 @@ Which template structure fits your needs?
     ]);
 
     const targetPerPillar = Math.floor(triadTotalTarget / 4);
-    const chunkSize = 5;
+    const chunkSize = 50;
     const stepsPerPillar = Math.ceil(targetPerPillar / chunkSize);
     const pillars: Array<'freedom' | 'truth' | 'kindness' | 'combined'> = ['freedom', 'truth', 'kindness', 'combined'];
 
@@ -832,52 +827,6 @@ setPendingBatch(accumulatedSFTItems);
       setTriadLogs(prev => [...prev, `[Error] ${err.message || 'pipeline failed'}`]);
     } finally {
       setIsTriadGenerating(false);
-    }
-  };
-
-  // Sibling Augmentation
-  const handleAugmentSibling = async (baseExample: SFTExample, count: number) => {
-    if (!activeProject) return;
-    setErrorText('');
-
-    try {
-      const res = await fetch('/api/augment-sft', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          example: baseExample,
-          project: activeProject,
-          count,
-          digitalOceanKey: doApiKey || undefined,
-          digitalOceanUrl: doApiUrl,
-          digitalOceanModel: doModel,
-        }),
-      });
-
-      if (!res.ok) throw new Error('Augmentation failed.');
-
-      const data = await res.json();
-      if (!data.examples || !Array.isArray(data.examples)) throw new Error('Invalid format returned.');
-
-      const newSFTItems: SFTExample[] = data.examples.map((item: any) => ({
-        id: `sft-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-        projectId: activeProject.id,
-        createdAt: Date.now(),
-        status: 'pending' as const,
-        tags: [...(item.tags || []), 'augmented'],
-        prompt: item.prompt,
-        response: item.response,
-        systemPrompt: item.systemPrompt,
-        userInput: item.userInput,
-        output: item.output,
-        messages: item.messages,
-      }));
-
-      syncExamples([...newSFTItems, ...examples]);
-
-    } catch (err: any) {
-      console.error(err);
-      setErrorText(err.message || 'Sibling augmentation failed.');
     }
   };
 
@@ -2296,7 +2245,6 @@ const path = require('path');
           onClose={() => setSelectedExample(null)}
           onSave={handleSaveExample}
           onDelete={handleDeleteExample}
-          onAugment={handleAugmentSibling}
         />
       )}
 

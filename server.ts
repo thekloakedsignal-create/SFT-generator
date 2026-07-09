@@ -267,22 +267,58 @@ async function startServer() {
         : 'https://inference.do-ai.run/v1';
       const effectiveDoModel = process.env.D0_INFERENCE_MODEL || process.env.DO_INFERENCE_MODEL || 'kimi-k2.6';
 
-      // Compose the prompt instruction set
-      const systemInstruction = `You are generating exactly ${count} training examples for the ${domainTask} domain. Follow the style guide: ${styleGuide || 'Default professional and concise response style'}.
+      let schemaInstruction = '';
+      if (templateType === 'user-response') {
+        schemaInstruction = `{
+  "examples": [
+    {
+      "systemPrompt": "System prompt instructing the assistant behavior.",
+      "prompt": "Realistic user prompt.",
+      "response": "High-fidelity target response."
+    }
+  ]
+}`;
+      } else if (templateType === 'reasoning') {
+        schemaInstruction = `{
+  "examples": [
+    {
+      "systemPrompt": "System prompt instructing the assistant behavior.",
+      "prompt": "Realistic user prompt.",
+      "thought": "Deep step-by-step thinking/reasoning process before responding.",
+      "response": "High-fidelity target response."
+    }
+  ]
+}`;
+      } else { // multi-turn
+        schemaInstruction = `{
+  "examples": [
+    {
+      "systemPrompt": "System prompt instructing the assistant behavior.",
+      "messages": [
+        { "role": "user", "content": "Realistic user prompt." },
+        { "role": "assistant", "content": "High-fidelity target response." }
+      ]
+    }
+  ]
+}`;
+      }
 
-${systemPrompt ? `Use this system prompt for the assistant: "${systemPrompt}"` : 'Use a standard helpful assistant system prompt.'}
+      const systemInstruction = `You are an elite SFT Fine-Tuning Specialist generating exactly ${count} training examples for the domain task: ${domainTask}.
+Follow the style guide: ${styleGuide || 'Default professional and concise response style'}.
 
-## INSTRUCTIONS
+${systemPrompt ? `The base system prompt for the assistant is: "${systemPrompt}"` : 'The assistant should use a standard helpful persona.'}
+
+## CRITICAL INSTRUCTIONS
 - No repeated phrases.
 - No duplicates.
-- Use varied response structure.
-- Include this system instruction as the 'content' field in the 'system' role of every example.
+- Varied sentence structures and starting phrases.
+- Every single generated example MUST include the "systemPrompt" field containing the active system prompt.
 
-## OUTPUT
-Return exactly ${count} items in a JSON array. Each item follows this structure:
-{"messages": [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
+## OUTPUT FORMAT
+You must return a single JSON object with an "examples" array matching the requested schema. No conversational padding, no markdown block syntax.
 
-No text outside the JSON array. No explanations.`;
+SCHEMA TO MATCH:
+${schemaInstruction}`;
 
       const contents = `Context for the requested generation:
       - Title: ${name || 'Custom Dataset'}
@@ -291,9 +327,7 @@ No text outside the JSON array. No explanations.`;
       ${customGuidelines ? `ADDITIONAL GENERATION CONSTRAINTS (USER MANDATED): ${customGuidelines}` : ''}
       ${existingExamplesSummary ? `PREVIOUSLY GENERATED TOPICS/THEMES: ${existingExamplesSummary}` : ''}`;
 
-      const contentsSuffix = `Please generate exactly ${count} training examples.
-      
-Perform the generation and output the array inside a JSON object conforming to the schema.`;
+      const contentsSuffix = `Please generate exactly ${count} training examples conforming to the schema layout.`;
 
       // 1. DigitalOcean Path
       console.log(`[Proxy] Routing SFT generation of ${count} items to DigitalOcean API...`);
@@ -436,37 +470,30 @@ Do not include any markdown formatting wrappers (like \`\`\`json or \`\`\`). Do 
       const schemaInstruction = `
 The returned JSON must follow this exact structure:
 ${
-  templateType === 'single-turn' ? `{
+  templateType === 'user-response' ? `{
   "examples": [
     {
+      "systemPrompt": "System context guidelines.",
       "prompt": "Realistic user prompt drawn from knowledge in the document.",
       "response": "Pristine golden target response executing the rules.",
       "tags": ["extracted", "topic"]
     }
   ]
-}` : templateType === 'reasoning-cot' ? `{
+}` : templateType === 'reasoning' ? `{
   "examples": [
     {
+      "systemPrompt": "System context guidelines.",
       "prompt": "Realistic user prompt drawn from knowledge in the document.",
       "thought": "Deep step-by-step thinking/reasoning process before responding.",
       "response": "Pristine golden target response executing the rules.",
       "tags": ["extracted", "thinking"]
     }
   ]
-}` : templateType === 'system-prompt' ? `{
-  "examples": [
-    {
-      "systemPrompt": "System context guidelines.",
-      "userInput": "User query input text.",
-      "output": "Pristine target response text.",
-      "tags": ["extracted", "system"]
-    }
-  ]
 }` : `{
   "examples": [
     {
+      "systemPrompt": "System context guidelines.",
       "messages": [
-        { "role": "system", "content": "system context (optional)" },
         { "role": "user", "content": "realistic user input" },
         { "role": "assistant", "content": "response matching guidelines" }
       ],
@@ -499,7 +526,7 @@ ${schemaInstruction}`;
         baseUrl: effectiveDoUrl,
         model: effectiveDoModel,
         systemInstruction,
-        userPrompt: userPrompt + '\n\n' + userPromptSuffix
+        userPrompt: userPrompt
       });
 
       const cleaned = cleanJsonString(responseText);
@@ -522,15 +549,13 @@ ${schemaInstruction}`;
       }
 
       // Format example content for review
-      let formattedItem = '';
-      if (project.templateType === 'single-turn') {
-        formattedItem = `PROMPT:\n${example.prompt}\n\nRESPONSE:\n${example.response}`;
-      } else if (project.templateType === 'reasoning-cot') {
-        formattedItem = `PROMPT:\n${example.prompt}\n\nTHOUGHT:\n${example.thought}\n\nRESPONSE:\n${example.response}`;
-      } else if (project.templateType === 'system-prompt') {
-        formattedItem = `SYSTEM PROMPT:\n${example.systemPrompt}\n\nUSER INPUT:\n${example.userInput}\n\nOUTPUT:\n${example.output}`;
+      let formattedItem = `SYSTEM PROMPT:\n${example.systemPrompt || ''}\n\n`;
+      if (project.templateType === 'user-response') {
+        formattedItem += `PROMPT:\n${example.prompt || ''}\n\nRESPONSE:\n${example.response || ''}`;
+      } else if (project.templateType === 'reasoning') {
+        formattedItem += `PROMPT:\n${example.prompt || ''}\n\nTHOUGHT:\n${example.thought || ''}\n\nRESPONSE:\n${example.response || ''}`;
       } else {
-        formattedItem = (example.messages || []).map((m: any) => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
+        formattedItem += (example.messages || []).map((m: any) => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
       }
 
       const systemInstruction = `You are a critical quality auditor for SFT (Supervised Fine-Tuning) training datasets. Your role is to rigorously review fine-tuning prompt-response pairs to ensure they are of gold-standard quality. You must output a single valid JSON object.`;
@@ -555,11 +580,10 @@ You must output a single valid JSON object containing all the feedback fields. N
   "negatives": ["Bullet point 1"],
   "suggestions": "A detailed suggestion explaining how to polish it.",
   "refined": {
-    // A refined version of the input item matching its format:
+    "systemPrompt": "polished system prompt",
     ${
-      project.templateType === 'single-turn' ? '"prompt": "polished prompt", "response": "polished response"' :
-      project.templateType === 'reasoning-cot' ? '"prompt": "polished prompt", "thought": "polished thinking", "response": "polished response"' :
-      project.templateType === 'system-prompt' ? '"systemPrompt": "polished system prompt", "userInput": "polished input", "output": "polished output"' :
+      project.templateType === 'user-response' ? '"prompt": "polished prompt", "response": "polished response"' :
+      project.templateType === 'reasoning' ? '"prompt": "polished prompt", "thought": "polished thinking", "response": "polished response"' :
       '"messages": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]'
     }
   }
@@ -607,122 +631,6 @@ ${schemaInstruction}`;
       res.status(500).json({ error: err.message || 'Failed to critique example.' });
     }
   });
-
-  // API: SFT Dataset Sibling Augmentation (Data Augmentation)
-  app.post('/api/augment-sft', async (req, res) => {
-    try {
-      const { example, project, count = 2 } = req.body;
-      if (!example || !project) {
-        return res.status(400).json({ error: 'An example and project definition are required for augmentation.' });
-      }
-
-      let formattedItem = '';
-      if (project.templateType === 'single-turn') {
-        formattedItem = `PROMPT:\n${example.prompt}\n\nRESPONSE:\n${example.response}`;
-      } else if (project.templateType === 'reasoning-cot') {
-        formattedItem = `PROMPT:\n${example.prompt}\n\nTHOUGHT:\n${example.thought}\n\nRESPONSE:\n${example.response}`;
-      } else if (project.templateType === 'system-prompt') {
-        formattedItem = `SYSTEM PROMPT:\n${example.systemPrompt}\n\nUSER INPUT:\n${example.userInput}\n\nOUTPUT:\n${example.output}`;
-      } else {
-        formattedItem = (example.messages || []).map((m: any) => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
-      }
-
-      const systemInstruction = `You are an SFT Data Augmenter. Your job is to take an existing EXCELLENT "golden" training example, and synthesize ${count} sibling examples. You must output a single valid JSON object containing an "examples" array.`;
-
-      const userPrompt = `A sibling example:
-- Explores a similar pattern, capability, or concept but with distinct topics, phrasing, and scenarios.
-- Could represent a more complex, verbose, or tricky edge-case variant of the original prompt.
-- Maintains the identical format template and perfectly respects the task domain and style guide.
-
-You must output a single valid JSON object containing an "examples" array matching the requested structure.
-Do not include any markdown syntax like \`\`\`json. Just raw, parseable JSON content.`;
-
-      const schemaInstruction = `
-The returned JSON must follow this exact structure:
-${
-  project.templateType === 'single-turn' ? `{
-  "examples": [
-    {
-      "prompt": "polished sibling prompt",
-      "response": "polished sibling response matching style guidelines",
-      "tags": ["sibling", "topic"]
-    }
-  ]
-}` : project.templateType === 'reasoning-cot' ? `{
-  "examples": [
-    {
-      "prompt": "polished sibling prompt",
-      "thought": "polished thinking/reasoning process",
-      "response": "polished sibling response matching style guidelines",
-      "tags": ["sibling", "thinking"]
-    }
-  ]
-}` : project.templateType === 'system-prompt' ? `{
-  "examples": [
-    {
-      "systemPrompt": "sibling system context",
-      "userInput": "sibling user query",
-      "output": "sibling target response matching style guidelines",
-      "tags": ["sibling", "system"]
-    }
-  ]
-}` : `{
-  "examples": [
-    {
-      "messages": [
-        { "role": "system", "content": "system context (optional)" },
-        { "role": "user", "content": "sibling user dialogue input" },
-        { "role": "assistant", "content": "sibling response" }
-      ],
-      "tags": ["sibling", "conversational"]
-    }
-  ]
-}`}
-
-CORE TASK DESCRIPTION:
-${project.domainTask}
-
-STYLE & FORMATTING GUIDE:
-${project.styleGuide}
-
-ORIGINAL GOLDEN EXAMPLE TO AUGMENT:
-${formattedItem}
-
-Generate exactly ${count} new diverse sibling examples matching this format.
-
-JSON SCHEMA REQUIREMENT:
-${schemaInstruction}`;
-
-      const effectiveDoKey = req.body.digitalOceanKey || process.env.D0_INFERENCE_KEY || process.env.DO_INFERENCE_KEY;
-      const effectiveDoUrl = req.body.digitalOceanUrl || process.env.D0_INFERENCE_URL || process.env.DO_INFERENCE_URL || 'https://inference.do-ai.run/v1';
-      const effectiveDoModel = req.body.digitalOceanModel || process.env.D0_INFERENCE_MODEL || process.env.DO_INFERENCE_MODEL || 'kimi-k2.6';
-
-      if (!effectiveDoKey) {
-        return res.status(400).json({
-          error: 'DigitalOcean Inference Key is required for Augmentation. Please configure D0_INFERENCE_KEY/DO_INFERENCE_KEY in your environment, or provide it via the Settings panel.'
-        });
-      }
-
-      console.log(`[Proxy] Routing Augmentation to DigitalOcean API using model ${effectiveDoModel}...`);
-      const responseText = await callDigitalOcean({
-        apiKey: effectiveDoKey,
-        baseUrl: effectiveDoUrl,
-        model: effectiveDoModel,
-        systemInstruction,
-        userPrompt: userPrompt + '\n\n' + userPromptSuffix
-      });
-
-      const cleaned = cleanJsonString(responseText);
-      const parsed = JSON.parse(cleaned);
-      const normalized = normalizeSftResponse(parsed);
-      res.json(normalized);
-
-    } catch (err: any) {
-      console.error('Augmentation Error:', err);
-      res.status(500).json({ error: err.message || 'Failed to augment dataset.' });
-    }
-  });
-
 
   // Serve frontend files (Vite integration)
   if (process.env.NODE_ENV !== 'production') {

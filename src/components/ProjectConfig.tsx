@@ -37,7 +37,7 @@ export default function ProjectConfig({
       id: `project-${Date.now()}`,
       name: 'Custom Fine-Tuning Task',
       description: 'Define your highly specific customized model behaviors here.',
-      templateType: 'single-turn',
+      templateType: 'user-response',
       domainTask: 'Explain your model\'s specialized purpose, persona, or domain (e.g. "An agent that rewrites complex legal definitions for 10-year-olds").',
       styleGuide: 'List the do\'s and don\'ts, tone criteria, formatting preferences, or word limit rules.',
       createdAt: Date.now()
@@ -150,19 +150,17 @@ export default function ProjectConfig({
               value={activeProject.templateType}
               onChange={(e) => handleFieldChange('templateType', e.target.value as SFTTemplateType)}
             >
-              <option value="single-turn">Single-Turn (Prompt → Response)</option>
-              <option value="reasoning-cot">Reasoning Chain-of-Thought (Prompt → Thought → Response)</option>
-              <option value="system-prompt">System-Prompt + (Prompt → Response)</option>
-              <option value="multi-turn">Multi-Turn Conversational Dialogue</option>
+              <option value="user-response">User / Response (with System Prompt)</option>
+              <option value="multi-turn">Multi-Turn Dialogue (with System Prompt)</option>
+              <option value="reasoning">Reasoning (with System Prompt, Prompt, Thought, Response)</option>
             </select>
           </div>
           <div className="flex items-center justify-start bg-slate-950 border border-slate-800/50 rounded-lg p-2.5 text-[11px] text-slate-500">
             <BookOpen className="w-4 h-4 text-slate-400 mr-2 shrink-0" />
             <div>
-              {activeProject.templateType === 'single-turn' && 'Finesse individual input-to-output conversions.'}
-              {activeProject.templateType === 'reasoning-cot' && 'Enforce explicit step-by-step thinking or scratchpads before responding.'}
-              {activeProject.templateType === 'system-prompt' && 'Specifies system context guidelines alongside the user query.'}
-              {activeProject.templateType === 'multi-turn' && 'Simulate nested chat logs with system, user, and assistant logs.'}
+              {activeProject.templateType === 'user-response' && 'Standard instruction fine-tuning consisting of system prompt, user prompt, and target response.'}
+              {activeProject.templateType === 'multi-turn' && 'Simulate multi-turn user-assistant chat logs guided by a standard system prompt.'}
+              {activeProject.templateType === 'reasoning' && 'Train models to reason step-by-step using thoughts/scratchpads before delivering the final response.'}
             </div>
           </div>
         </div>

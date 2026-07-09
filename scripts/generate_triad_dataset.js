@@ -25,7 +25,7 @@ const path = require('path');
 
 // Target configuration
 const TOTAL_PER_PILLAR = 250;
-const BATCH_SIZE = 5; // Step size to ensure high-fidelity JSON output and avoid model limits
+const BATCH_SIZE = 50; // Step size optimized for generation speed
 
 const OUTPUT_FILE = path.join(process.cwd(), 'triad_alignment_dataset.jsonl');
 
