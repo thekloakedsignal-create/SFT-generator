@@ -174,15 +174,12 @@ export default function SFTList({
                   let titleText = '';
                   let bodyText = '';
                   
-                  if (templateType === 'single-turn') {
+                  if (templateType === 'user-response') {
                     titleText = ex.prompt || '';
                     bodyText = ex.response || '';
-                  } else if (templateType === 'reasoning-cot') {
+                  } else if (templateType === 'reasoning') {
                     titleText = ex.prompt || '';
                     bodyText = ex.thought ? `[THOUGHT] ${ex.thought} \n\n[RESPONSE] ${ex.response}` : (ex.response || '');
-                  } else if (templateType === 'system-prompt') {
-                    titleText = ex.userInput || '';
-                    bodyText = ex.output || '';
                   } else {
                     // Multi-turn
                     const userMsgs = ex.messages?.filter(m => m.role === 'user') || [];
