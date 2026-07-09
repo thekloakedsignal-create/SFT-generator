@@ -56,126 +56,6 @@ async function startServer() {
     return content.replace(/[^\x20-\x7E\n\r\t]/g, ' ').substring(0, 10000);
   }
 
-  // Sub-helper to sanitize unescaped control characters inside string literals
-  function sanitizeJsonString(str: string): string {
-    let result = '';
-    let inString = false;
-    let escape = false;
-    for (let i = 0; i < str.length; i++) {
-      const char = str[i];
-      if (escape) {
-        result += char;
-        escape = false;
-        continue;
-      }
-      if (char === '\\') {
-        result += char;
-        escape = true;
-        continue;
-      }
-      if (char === '"') {
-        inString = !inString;
-        result += char;
-        continue;
-      }
-      if (inString) {
-        if (char === '\n') {
-          result += '\\n';
-        } else if (char === '\r') {
-          result += '\\r';
-        } else if (char === '\t') {
-          result += '\\t';
-        } else {
-          result += char;
-        }
-      } else {
-        result += char;
-      }
-    }
-    return result;
-  }
-
-  // Helper to clean Markdown JSON blocks and handle complex malformed JSON responses from models
-  function cleanJsonString(str: string): string {
-    let cleaned = str.trim();
-    
-    // First try standard sanitization of control characters
-    cleaned = sanitizeJsonString(cleaned);
-
-    // Try direct parse to see if it's already valid
-    try {
-      JSON.parse(cleaned);
-      return cleaned;
-    } catch (e) {}
-
-    // Try to extract content between ```json and ``` or ``` and ```
-    const codeBlockRegex = /```(?:json)?\s*([\s\S]*?)```/i;
-    const match = cleaned.match(codeBlockRegex);
-    if (match && match[1]) {
-      const candidate = match[1].trim();
-      try {
-        JSON.parse(candidate);
-        return candidate;
-      } catch (e) {}
-    }
-
-    // Fallback: original basic bounding logic
-    const firstBrace = cleaned.indexOf('{');
-    const firstBracket = cleaned.indexOf('[');
-    let startIdx = -1;
-    let endIdx = -1;
-
-    if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
-      startIdx = firstBrace;
-      endIdx = cleaned.lastIndexOf('}');
-    } else if (firstBracket !== -1) {
-      startIdx = firstBracket;
-      endIdx = cleaned.lastIndexOf(']');
-    }
-
-    if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-      let bounded = cleaned.substring(startIdx, endIdx + 1).trim();
-      try {
-        JSON.parse(bounded);
-        return bounded;
-      } catch (e) {}
-      
-      // Try removing trailing commas
-      let withoutTrailingCommas = bounded
-        .replace(/,\s*\]/g, ']')
-        .replace(/,\s*\}/g, '}');
-      try {
-        JSON.parse(withoutTrailingCommas);
-        return withoutTrailingCommas;
-      } catch (e) {}
-      
-      return bounded;
-    }
-
-    return cleaned;
-  }
-
-  // Normalizes an SFT response payload to always conform to the schema: { examples: [...] }
-  function normalizeSftResponse(parsed: any): any {
-    if (!parsed) return { examples: [] };
-    if (Array.isArray(parsed)) {
-      return { examples: parsed };
-    }
-    if (parsed.examples && Array.isArray(parsed.examples)) {
-      return parsed;
-    }
-    // Check other common array names
-    for (const key of Object.keys(parsed)) {
-      if (Array.isArray(parsed[key])) {
-        return { examples: parsed[key] };
-      }
-    }
-    // If it's a single object that looks like an example, wrap it
-    if (parsed.prompt || parsed.messages || parsed.userInput || parsed.output) {
-      return { examples: [parsed] };
-    }
-    return { examples: [] };
-  }
 
   // Helper to call OpenAI-compatible DigitalOcean Serverless API
   async function callDigitalOcean(params: {
@@ -199,7 +79,8 @@ async function startServer() {
         { role: 'system', content: params.systemInstruction },
         { role: 'user', content: params.userPrompt }
       ],
-      temperature: 0.85
+      temperature: 0.85,
+      response_format: { type: 'json_object' }
     };
 
     const response = await fetch(targetUrl, {
@@ -529,10 +410,7 @@ ${schemaInstruction}`;
         userPrompt: userPrompt
       });
 
-      const cleaned = cleanJsonString(responseText);
-      const parsed = JSON.parse(cleaned);
-      const normalized = normalizeSftResponse(parsed);
-      res.json(normalized);
+      res.json(JSON.parse(responseText));
 
     } catch (err: any) {
       console.error('Document OCR Conversion Error:', err);
@@ -622,9 +500,7 @@ ${schemaInstruction}`;
         userPrompt: userPrompt + '\n\n' + userPromptSuffix
       });
 
-      const cleaned = cleanJsonString(responseText);
-      const parsed = JSON.parse(cleaned);
-      res.json(parsed);
+      res.json(JSON.parse(responseText));
 
     } catch (err: any) {
       console.error('Critique Error:', err);

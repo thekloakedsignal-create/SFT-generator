@@ -40,30 +40,25 @@ export default function ExportSuite({
     if (exportFormat === 'alpaca') {
       // Alpaca Format: instruction, input, output
       dataToExport = itemsToProcess.map(ex => {
-        if (project.templateType === 'single-turn') {
+        const instruction = ex.systemPrompt || project.domainTask;
+        if (project.templateType === 'user-response') {
           return {
-            instruction: project.domainTask,
+            instruction,
             input: ex.prompt || '',
             output: ex.response || ''
           };
-        } else if (project.templateType === 'reasoning-cot') {
+        } else if (project.templateType === 'reasoning') {
           return {
-            instruction: project.domainTask,
+            instruction,
             input: ex.prompt || '',
             output: ex.thought ? `<thought>\n${ex.thought}\n</thought>\n\n${ex.response || ''}` : (ex.response || '')
-          };
-        } else if (project.templateType === 'system-prompt') {
-          return {
-            instruction: ex.systemPrompt || project.domainTask,
-            input: ex.userInput || '',
-            output: ex.output || ''
           };
         } else {
           // Multi-turn
           const promptMsg = ex.messages?.find(m => m.role === 'user')?.content || '';
           const responseMsg = ex.messages?.find(m => m.role === 'assistant')?.content || '';
           return {
-            instruction: project.domainTask,
+            instruction,
             input: promptMsg,
             output: responseMsg
           };
@@ -72,29 +67,35 @@ export default function ExportSuite({
     } else if (exportFormat === 'sharegpt') {
       // ShareGPT format: conversations array
       dataToExport = itemsToProcess.map(ex => {
-        let conversations: Array<{ from: 'human' | 'gpt' | 'system'; value: string }> = [];
+        const conversations: Array<{ from: 'human' | 'gpt' | 'system'; value: string }> = [];
+        const systemVal = ex.systemPrompt || project.domainTask;
+        if (systemVal) {
+          conversations.push({ from: 'system', value: systemVal });
+        }
         
-        if (project.templateType === 'single-turn') {
-          conversations = [
+        if (project.templateType === 'user-response') {
+          conversations.push(
             { from: 'human', value: ex.prompt || '' },
             { from: 'gpt', value: ex.response || '' }
-          ];
-        } else if (project.templateType === 'reasoning-cot') {
-          conversations = [
+          );
+        } else if (project.templateType === 'reasoning') {
+          conversations.push(
             { from: 'human', value: ex.prompt || '' },
             { from: 'gpt', value: ex.thought ? `<thought>\n${ex.thought}\n</thought>\n\n${ex.response || ''}` : (ex.response || '') }
-          ];
-        } else if (project.templateType === 'system-prompt') {
-          conversations = [
-            { from: 'system', value: ex.systemPrompt || '' },
-            { from: 'human', value: ex.userInput || '' },
-            { from: 'gpt', value: ex.output || '' }
-          ];
+          );
         } else {
-          conversations = (ex.messages || []).map(m => ({
-            from: m.role === 'user' ? 'human' as const : m.role === 'assistant' ? 'gpt' as const : 'system' as const,
-            value: m.content
-          }));
+          (ex.messages || []).forEach(m => {
+            if (m.role === 'system') {
+              if (!conversations.some(c => c.from === 'system')) {
+                conversations.push({ from: 'system', value: m.content });
+              }
+            } else {
+              conversations.push({
+                from: m.role === 'user' ? 'human' as const : 'gpt' as const,
+                value: m.content
+              });
+            }
+          });
         }
 
         return {
@@ -105,38 +106,37 @@ export default function ExportSuite({
     } else if (exportFormat === 'jsonl') {
       // Llama / OpenAI JSONL format {"messages": [{"role": "system", "content": "..."}, ...]}
       dataToExport = itemsToProcess.map(ex => {
-        if (project.templateType === 'single-turn') {
-          return {
-            messages: [
-              { role: 'system', content: project.domainTask },
-              { role: 'user', content: ex.prompt || '' },
-              { role: 'assistant', content: ex.response || '' }
-            ]
-          };
-        } else if (project.templateType === 'reasoning-cot') {
-          return {
-            messages: [
-              { role: 'system', content: project.domainTask },
-              { role: 'user', content: ex.prompt || '' },
-              { role: 'assistant', content: ex.thought ? `<thought>\n${ex.thought}\n</thought>\n\n${ex.response || ''}` : (ex.response || '') }
-            ]
-          };
-        } else if (project.templateType === 'system-prompt') {
-          return {
-            messages: [
-              { role: 'system', content: ex.systemPrompt || project.domainTask },
-              { role: 'user', content: ex.userInput || '' },
-              { role: 'assistant', content: ex.output || '' }
-            ]
-          };
-        } else {
-          return {
-            messages: (ex.messages || []).map(m => ({
-              role: m.role,
-              content: m.content
-            }))
-          };
+        const systemContent = ex.systemPrompt || project.domainTask;
+        const messagesList: any[] = [];
+        if (systemContent) {
+          messagesList.push({ role: 'system', content: systemContent });
         }
+
+        if (project.templateType === 'user-response') {
+          messagesList.push(
+            { role: 'user', content: ex.prompt || '' },
+            { role: 'assistant', content: ex.response || '' }
+          );
+        } else if (project.templateType === 'reasoning') {
+          messagesList.push(
+            { role: 'user', content: ex.prompt || '' },
+            { role: 'assistant', content: ex.thought ? `<thought>\n${ex.thought}\n</thought>\n\n${ex.response || ''}` : (ex.response || '') }
+          );
+        } else {
+          const turnMsgs = (ex.messages || []).map(m => ({
+            role: m.role,
+            content: m.content
+          }));
+          if (!turnMsgs.some(m => m.role === 'system') && systemContent) {
+            messagesList.push(...turnMsgs);
+          } else {
+            return { messages: turnMsgs };
+          }
+        }
+
+        return {
+          messages: messagesList
+        };
       });
     } else {
       // Raw workspace JSON format
@@ -183,12 +183,20 @@ export default function ExportSuite({
         const parsed = JSON.parse(text);
 
         if (parsed.id && parsed.name && parsed.templateType) {
+          // Map incoming template names to new options if they are legacy format
+          let templateTypeMap = parsed.templateType;
+          if (templateTypeMap === 'single-turn' || templateTypeMap === 'system-prompt') {
+            templateTypeMap = 'user-response';
+          } else if (templateTypeMap === 'reasoning-cot') {
+            templateTypeMap = 'reasoning';
+          }
+
           // This is a single workspace backup format
           const importedProj: SFTProject = {
             id: parsed.id,
             name: parsed.name,
             description: parsed.description || '',
-            templateType: parsed.templateType,
+            templateType: templateTypeMap,
             domainTask: parsed.domainTask || '',
             styleGuide: parsed.styleGuide || '',
             createdAt: parsed.createdAt || Date.now()
