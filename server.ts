@@ -526,7 +526,7 @@ ${schemaInstruction}`;
         baseUrl: effectiveDoUrl,
         model: effectiveDoModel,
         systemInstruction,
-        userPrompt: userPrompt + '\n\n' + userPromptSuffix
+        userPrompt: userPrompt
       });
 
       const cleaned = cleanJsonString(responseText);
