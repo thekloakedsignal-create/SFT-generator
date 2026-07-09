@@ -1,4 +1,4 @@
-export type SFTTemplateType = 'single-turn' | 'system-prompt' | 'multi-turn' | 'reasoning-cot';
+export type SFTTemplateType = 'user-response' | 'multi-turn' | 'reasoning';
 
 export interface SFTMessage {
   id: string;
@@ -11,15 +11,13 @@ export interface SFTExample {
   projectId: string;
   createdAt: number;
   
-  // Single-turn fields
+  // Standard fields across all templates
+  systemPrompt?: string;
+
+  // standard fields for 'user-response' and 'reasoning'
   prompt?: string;
   response?: string;
-  thought?: string;
-
-  // System prompt + Prompt/Response fields
-  systemPrompt?: string;
-  userInput?: string;
-  output?: string;
+  thought?: string; // used specifically for 'reasoning'
 
   // Multi-turn fields
   messages?: SFTMessage[];
@@ -28,7 +26,7 @@ export interface SFTExample {
   status: 'pending' | 'approved' | 'rejected' | 'curated';
   tags: string[];
   notes?: string;
-  batchId?: string; // Grouping ID for generated batches
+  batchId?: string; // Grouping ID for generated batches or categories
   
   // AI Critique details
   critique?: {

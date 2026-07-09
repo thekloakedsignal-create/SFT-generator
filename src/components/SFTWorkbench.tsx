@@ -23,7 +23,6 @@ interface SFTWorkbenchProps {
   onClose: () => void;
   onSave: (example: SFTExample) => void;
   onDelete: (id: string) => void;
-  onAugment: (example: SFTExample, count: number) => Promise<void>;
 }
 
 export default function SFTWorkbench({
@@ -32,7 +31,6 @@ export default function SFTWorkbench({
   onClose,
   onSave,
   onDelete,
-  onAugment,
 }: SFTWorkbenchProps) {
   // Local state for edits
   const [workTab, setWorkTab] = useState<'edit' | 'preview'>('edit');
@@ -40,8 +38,6 @@ export default function SFTWorkbench({
   const [response, setResponse] = useState(example.response || '');
   const [thought, setThought] = useState(example.thought || '');
   const [systemPrompt, setSystemPrompt] = useState(example.systemPrompt || '');
-  const [userInput, setUserInput] = useState(example.userInput || '');
-  const [output, setOutput] = useState(example.output || '');
   const [messages, setMessages] = useState<SFTMessage[]>(example.messages || []);
   const [tags, setTags] = useState<string>(example.tags?.join(', ') || '');
   const [status, setStatus] = useState<SFTExample['status']>(example.status);
@@ -49,7 +45,6 @@ export default function SFTWorkbench({
   // Critiquer state
   const [isAuditing, setIsAuditing] = useState(false);
   const [auditResult, setAuditResult] = useState<any>(example.critique || null);
-  const [isAugmenting, setIsAugmenting] = useState(false);
 
   // Handle saving edits
   const handleLocalSave = () => {
@@ -57,12 +52,10 @@ export default function SFTWorkbench({
       ...example,
       status,
       tags: tags.split(',').map(t => t.trim()).filter(Boolean),
-      prompt,
-      response,
-      thought: project.templateType === 'reasoning-cot' ? thought : undefined,
       systemPrompt,
-      userInput,
-      output,
+      prompt: project.templateType !== 'multi-turn' ? prompt : undefined,
+      response: project.templateType !== 'multi-turn' ? response : undefined,
+      thought: project.templateType === 'reasoning' ? thought : undefined,
       messages: project.templateType === 'multi-turn' ? messages : undefined,
       critique: auditResult || undefined
     };
@@ -76,12 +69,10 @@ export default function SFTWorkbench({
     try {
       const payloadItem = {
         ...example,
-        prompt,
-        response,
-        thought: project.templateType === 'reasoning-cot' ? thought : undefined,
         systemPrompt,
-        userInput,
-        output,
+        prompt: project.templateType !== 'multi-turn' ? prompt : undefined,
+        response: project.templateType !== 'multi-turn' ? response : undefined,
+        thought: project.templateType === 'reasoning' ? thought : undefined,
         messages: project.templateType === 'multi-turn' ? messages : undefined
       };
 
@@ -109,45 +100,19 @@ export default function SFTWorkbench({
   const handleApplyRefined = () => {
     if (!auditResult || !auditResult.refined) return;
     const ref = auditResult.refined;
-    if (project.templateType === 'single-turn') {
+    if (ref.systemPrompt) setSystemPrompt(ref.systemPrompt);
+    if (project.templateType === 'user-response') {
       if (ref.prompt) setPrompt(ref.prompt);
       if (ref.response) setResponse(ref.response);
-    } else if (project.templateType === 'reasoning-cot') {
+    } else if (project.templateType === 'reasoning') {
       if (ref.prompt) setPrompt(ref.prompt);
       if (ref.thought) setThought(ref.thought);
       if (ref.response) setResponse(ref.response);
-    } else if (project.templateType === 'system-prompt') {
-      if (ref.systemPrompt) setSystemPrompt(ref.systemPrompt);
-      if (ref.userInput) setUserInput(ref.userInput);
-      if (ref.output) setOutput(ref.output);
-    } else {
+    } else if (project.templateType === 'multi-turn') {
       if (ref.messages) setMessages(ref.messages);
     }
     // Boost status to approved if they applied refined
     setStatus('approved');
-  };
-
-  // Generate distinct sibling copies
-  const handleLocalAugment = async () => {
-    setIsAugmenting(true);
-    try {
-      const currentItem = {
-        ...example,
-        prompt,
-        response,
-        thought: project.templateType === 'reasoning-cot' ? thought : undefined,
-        systemPrompt,
-        userInput,
-        output,
-        messages: project.templateType === 'multi-turn' ? messages : undefined
-      };
-      await onAugment(currentItem, 2);
-      onClose();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsAugmenting(false);
-    }
   };
 
   // Multi-turn message controls
@@ -169,6 +134,21 @@ export default function SFTWorkbench({
   const handleRemoveTurn = (index: number) => {
     setMessages(messages.filter((_, idx) => idx !== index));
   };
+
+  const schemaInstruction = `{
+  "score": 4, // integer score from 1 (poor) to 5 (excellent)
+  "positives": ["Bullet point 1", "Bullet point 2"],
+  "negatives": ["Bullet point 1"],
+  "suggestions": "A detailed suggestion explaining how to polish it.",
+  "refined": {
+    "systemPrompt": "polished system prompt",
+    ${
+      project.templateType === 'user-response' ? '"prompt": "polished prompt", "response": "polished response"' :
+      project.templateType === 'reasoning' ? '"prompt": "polished prompt", "thought": "polished thinking", "response": "polished response"' :
+      '"messages": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]'
+    }
+  }
+}`;
 
   return (
     <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
@@ -239,7 +219,18 @@ export default function SFTWorkbench({
 
             {workTab === 'edit' ? (
               <div className="space-y-4">
-                {project.templateType === 'single-turn' && (
+                <div>
+                  <label className="block text-xs text-slate-400 font-medium mb-1">System Prompt Context</label>
+                  <textarea
+                    rows={2.5}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                    value={systemPrompt}
+                    onChange={(e) => setSystemPrompt(e.target.value)}
+                    placeholder="e.g., You are a Shakespearean Web Coder assistant."
+                  />
+                </div>
+
+                {project.templateType === 'user-response' && (
                   <div className="space-y-3.5">
                     <div>
                       <label className="block text-xs text-slate-400 font-medium mb-1">User Prompt / Input</label>
@@ -262,7 +253,7 @@ export default function SFTWorkbench({
                   </div>
                 )}
 
-                {project.templateType === 'reasoning-cot' && (
+                {project.templateType === 'reasoning' && (
                   <div className="space-y-3.5">
                     <div>
                       <label className="block text-xs text-slate-400 font-medium mb-1">User Prompt / Input</label>
@@ -295,38 +286,6 @@ export default function SFTWorkbench({
                   </div>
                 )}
 
-                {project.templateType === 'system-prompt' && (
-                  <div className="space-y-3.5">
-                    <div>
-                      <label className="block text-xs text-slate-400 font-medium mb-1">System Prompt Context</label>
-                      <textarea
-                        rows={2}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
-                        value={systemPrompt}
-                        onChange={(e) => setSystemPrompt(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-slate-400 font-medium mb-1">User Input / Query</label>
-                      <textarea
-                        rows={3}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
-                        value={userInput}
-                        onChange={(e) => setUserInput(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-slate-400 font-medium mb-1">Pristine Output Response</label>
-                      <textarea
-                        rows={6}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-sans leading-relaxed"
-                        value={output}
-                        onChange={(e) => setOutput(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                )}
-
                 {project.templateType === 'multi-turn' && (
                   <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
                     {messages.map((msg, index) => (
@@ -339,12 +298,12 @@ export default function SFTWorkbench({
                           }`}>
                             {msg.role}
                           </span>
-                          {messages.length > 2 && (
+                          {messages.length > 1 && (
                             <button
                               onClick={() => handleRemoveTurn(index)}
                               className="text-slate-500 hover:text-red-400 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
                             >
-                              <Trash2 className="w-3 h-3" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           )}
                         </div>
@@ -368,7 +327,14 @@ export default function SFTWorkbench({
               </div>
             ) : (
               <div className="space-y-4 max-h-[420px] overflow-y-auto pr-1">
-                {project.templateType === 'single-turn' && (
+                {systemPrompt.trim() && (
+                  <div className="bg-indigo-500/[0.02] border border-indigo-500/20 rounded-xl p-4">
+                    <span className="text-[10px] font-mono font-bold text-indigo-400 uppercase tracking-wider block mb-2 border-b border-indigo-500/10 pb-1">System Prompt Context</span>
+                    <MarkdownRenderer content={systemPrompt} />
+                  </div>
+                )}
+
+                {project.templateType === 'user-response' && (
                   <div className="space-y-4">
                     <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-4">
                       <span className="text-[10px] font-mono font-bold text-blue-400 uppercase tracking-wider block mb-2 border-b border-slate-900 pb-1">User Prompt / Input</span>
@@ -381,7 +347,7 @@ export default function SFTWorkbench({
                   </div>
                 )}
 
-                {project.templateType === 'reasoning-cot' && (
+                {project.templateType === 'reasoning' && (
                   <div className="space-y-4">
                     <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-4">
                       <span className="text-[10px] font-mono font-bold text-blue-400 uppercase tracking-wider block mb-2 border-b border-slate-900 pb-1">User Prompt / Input</span>
@@ -394,23 +360,6 @@ export default function SFTWorkbench({
                     <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-4">
                       <span className="text-[10px] font-mono font-bold text-amber-400 uppercase tracking-wider block mb-2 border-b border-slate-900 pb-1">Target Response / Output</span>
                       {response.trim() ? <MarkdownRenderer content={response} /> : <p className="text-xs text-slate-600 italic">No response entered yet.</p>}
-                    </div>
-                  </div>
-                )}
-
-                {project.templateType === 'system-prompt' && (
-                  <div className="space-y-4">
-                    <div className="bg-indigo-500/[0.02] border border-indigo-500/20 rounded-xl p-4">
-                      <span className="text-[10px] font-mono font-bold text-indigo-400 uppercase tracking-wider block mb-2 border-b border-indigo-500/10 pb-1">System Prompt Context</span>
-                      {systemPrompt.trim() ? <MarkdownRenderer content={systemPrompt} /> : <p className="text-xs text-slate-600 italic">No system prompt entered yet.</p>}
-                    </div>
-                    <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-4">
-                      <span className="text-[10px] font-mono font-bold text-blue-400 uppercase tracking-wider block mb-2 border-b border-slate-900 pb-1">User Input / Query</span>
-                      {userInput.trim() ? <MarkdownRenderer content={userInput} /> : <p className="text-xs text-slate-600 italic">No input entered yet.</p>}
-                    </div>
-                    <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-4">
-                      <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider block mb-2 border-b border-slate-900 pb-1">Pristine Output Response</span>
-                      {output.trim() ? <MarkdownRenderer content={output} /> : <p className="text-xs text-slate-600 italic">No output entered yet.</p>}
                     </div>
                   </div>
                 )}
@@ -543,23 +492,6 @@ export default function SFTWorkbench({
                   </button>
                 </div>
               )}
-            </div>
-
-            {/* Sibling Augmentation Panel */}
-            <div className="pt-3 border-t border-slate-800 space-y-2 shrink-0">
-              <span className="text-[10px] font-semibold text-slate-400 block uppercase tracking-wider">Expand Dataset from here</span>
-              <button
-                onClick={handleLocalAugment}
-                disabled={isAugmenting}
-                className="w-full bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 py-2 rounded-lg text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors"
-              >
-                {isAugmenting ? (
-                  <Activity className="w-3.5 h-3.5 text-amber-500 animate-spin" />
-                ) : (
-                  <PlusSquare className="w-3.5 h-3.5 text-amber-500" />
-                )}
-                <span>Generate 2 Sibling Augmentations</span>
-              </button>
             </div>
 
           </div>
