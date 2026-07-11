@@ -348,9 +348,7 @@ Each extracted example must perfectly follow these target behaviors:
 You must output a single valid JSON object containing an "examples" array matching the requested structure for: "${templateType}".
 Do not include any markdown formatting wrappers (like \`\`\`json or \`\`\`). Do not include any introductory or explanatory text. Just output the raw JSON object.`;
 
-      const schemaTemplate = `
-The returned JSON must follow this exact structure:
-${
+      const schemaShape = `${
   templateType === 'user-response' ? `{
   "examples": [
     {
@@ -381,7 +379,11 @@ ${
       "tags": ["extracted", "conversational"]
     }
   ]
-}`}
+}`}`;
+
+     const schemaTemplate = `
+The returned JSON must follow this exact structure:
+${schemaShape}
 
 Read this document carefully. Extract ${count} highly original and diverse scenarios or instruction tasks representing genuine knowledge in the document, and convert them to golden SFT training examples inside the required JSON schema.
 
@@ -389,7 +391,7 @@ DOCUMENT CONTENT:
 ${textContent}
 
 JSON SCHEMA REQUIREMENT:
-${schemaTemplate}`;
+${schemaShape}`;
 
       const effectiveDoKey = req.body.digitalOceanKey || process.env.D0_INFERENCE_KEY || process.env.DO_INFERENCE_KEY;
       const effectiveDoUrl = req.body.digitalOceanUrl || process.env.D0_INFERENCE_URL || process.env.DO_INFERENCE_URL || 'https://inference.do-ai.run/v1';
