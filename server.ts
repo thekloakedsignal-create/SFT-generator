@@ -394,9 +394,9 @@ Read this document carefully. Extract ${count} highly original and diverse scena
 DOCUMENT CONTENT:
 ${textContent}`;
 
-      const effectiveDoKey = req.body.digitalOceanKey || process.env.D0_INFERENCE_KEY || process.env.DO_INFERENCE_KEY;
-      const effectiveDoUrl = req.body.digitalOceanUrl || process.env.D0_INFERENCE_URL || process.env.DO_INFERENCE_URL || 'https://inference.do-ai.run/v1';
-      const effectiveDoModel = req.body.digitalOceanModel || process.env.D0_INFERENCE_MODEL || process.env.DO_INFERENCE_MODEL || 'kimi-k2.6';
+      const effectiveDoKey = req.body.digitalOceanKey || process.env.DO_INFERENCE_KEY || process.env.D0_INFERENCE_KEY;
+      const effectiveDoUrl = req.body.digitalOceanUrl || process.env.DO_INFERENCE_URL || process.env.D0_INFERENCE_URL || 'https://inference.do-ai.run/v1';
+      const effectiveDoModel = req.body.digitalOceanModel || process.env.DO_INFERENCE_MODEL || process.env.D0_INFERENCE_MODEL || 'kimi-k2.6';
 
       if (!effectiveDoKey) {
         return res.status(400).json({
