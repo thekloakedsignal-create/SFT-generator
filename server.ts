@@ -381,17 +381,14 @@ Do not include any markdown formatting wrappers (like \`\`\`json or \`\`\`). Do 
   ]
 }`}`;
 
-     const schemaTemplate = `
+     const schemaInstruction = `
 The returned JSON must follow this exact structure:
 ${schemaShape}
 
 Read this document carefully. Extract ${count} highly original and diverse scenarios or instruction tasks representing genuine knowledge in the document, and convert them to golden SFT training examples inside the required JSON schema.
 
 DOCUMENT CONTENT:
-${textContent}
-
-JSON SCHEMA REQUIREMENT:
-${schemaShape}`;
+${textContent}`;
 
       const effectiveDoKey = req.body.digitalOceanKey || process.env.D0_INFERENCE_KEY || process.env.DO_INFERENCE_KEY;
       const effectiveDoUrl = req.body.digitalOceanUrl || process.env.D0_INFERENCE_URL || process.env.DO_INFERENCE_URL || 'https://inference.do-ai.run/v1';
@@ -409,7 +406,7 @@ ${schemaShape}`;
         baseUrl: effectiveDoUrl,
         model: effectiveDoModel,
         systemInstruction,
-        userPrompt: userPrompt
+        userPrompt: userPrompt + '\n\n' + schemaInstruction
       });
 
       res.json(JSON.parse(responseText));
