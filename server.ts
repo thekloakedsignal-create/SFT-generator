@@ -6,6 +6,8 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const DEFAULT_DO_BASE_URL = 'https://inference.do-ai.run/v1';
+
 // Securely access Gemini API key
 const getGeminiClient = () => {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -58,6 +60,24 @@ async function startServer() {
 
 
   // Helper to call OpenAI-compatible DigitalOcean Serverless API
+  function normalizeDigitalOceanUrl(rawUrl?: string): string {
+    const candidate = typeof rawUrl === 'string' && rawUrl.trim() !== ''
+      ? rawUrl.trim()
+      : DEFAULT_DO_BASE_URL;
+    const parsed = new URL(candidate);
+    const hostname = parsed.hostname.toLowerCase();
+
+    if (parsed.protocol !== 'https:') {
+      throw new Error('DigitalOcean inference URL must use HTTPS.');
+    }
+
+    if (hostname !== 'inference.do-ai.run' && !hostname.endsWith('.do-ai.run')) {
+      throw new Error('DigitalOcean inference URL must target a do-ai.run endpoint.');
+    }
+
+    return parsed.toString().replace(/\/$/, '');
+  }
+
   async function callDigitalOcean(params: {
     apiKey: string;
     baseUrl: string;
@@ -65,7 +85,7 @@ async function startServer() {
     systemInstruction: string;
     userPrompt: string;
   }): Promise<string> {
-    let baseUrlClean = params.baseUrl ? params.baseUrl.replace(/\/$/, '') : 'https://inference.do-ai.run/v1';
+    const baseUrlClean = normalizeDigitalOceanUrl(params.baseUrl);
     
     // Support either full endpoints or standard base paths
     let targetUrl = `${baseUrlClean}/chat/completions`;
@@ -107,12 +127,12 @@ async function startServer() {
 
   // API Health Endpoint
   app.get('/api/health', (req, res) => {
-    const hasDoEnvKey = !!(process.env.D0_INFERENCE_KEY || process.env.DO_INFERENCE_KEY);
+    const hasDoEnvKey = !!(process.env.DO_INFERENCE_KEY || process.env.D0_INFERENCE_KEY);
     res.json({ 
       status: 'ok', 
       time: new Date().toISOString(),
       hasDoEnvKey,
-      doModel: process.env.D0_INFERENCE_MODEL || process.env.DO_INFERENCE_MODEL || 'kimi-k2.6'
+      doModel: process.env.DO_INFERENCE_MODEL || process.env.D0_INFERENCE_MODEL || 'kimi-k2.6'
     });
   });
 
@@ -138,15 +158,13 @@ async function startServer() {
       }
 
       // Key/URL/Model are stored in system environment
-      const effectiveDoKey = process.env.D0_INFERENCE_KEY || process.env.DO_INFERENCE_KEY;
+      const effectiveDoKey = process.env.DO_INFERENCE_KEY || process.env.D0_INFERENCE_KEY;
       if (!effectiveDoKey) {
         return res.status(500).json({ error: 'System configuration error: DO_INFERENCE_KEY (or D0_INFERENCE_KEY) missing.' });
       }
-      const rawDoUrl = process.env.D0_INFERENCE_URL || process.env.DO_INFERENCE_URL;
-      const effectiveDoUrl = (rawDoUrl && rawDoUrl.startsWith('http')) 
-        ? rawDoUrl 
-        : 'https://inference.do-ai.run/v1';
-      const effectiveDoModel = process.env.D0_INFERENCE_MODEL || process.env.DO_INFERENCE_MODEL || 'kimi-k2.6';
+      const rawDoUrl = process.env.DO_INFERENCE_URL || process.env.D0_INFERENCE_URL;
+      const effectiveDoUrl = normalizeDigitalOceanUrl(rawDoUrl);
+      const effectiveDoModel = process.env.DO_INFERENCE_MODEL || process.env.D0_INFERENCE_MODEL || 'kimi-k2.6';
 
       let schemaInstruction = '';
       if (templateType === 'user-response') {
@@ -348,9 +366,7 @@ Each extracted example must perfectly follow these target behaviors:
 You must output a single valid JSON object containing an "examples" array matching the requested structure for: "${templateType}".
 Do not include any markdown formatting wrappers (like \`\`\`json or \`\`\`). Do not include any introductory or explanatory text. Just output the raw JSON object.`;
 
-      const schemaInstruction = `
-The returned JSON must follow this exact structure:
-${
+      const schemaExample = `${
   templateType === 'user-response' ? `{
   "examples": [
     {
@@ -381,19 +397,26 @@ ${
       "tags": ["extracted", "conversational"]
     }
   ]
-}`}
+}`}`;
+
+     const ocrSchemaInstruction = `
+The returned JSON must follow this exact structure:
+${schemaExample}`;
+
+     const conversionPrompt = `${userPrompt}
+
+${ocrSchemaInstruction}
 
 Read this document carefully. Extract ${count} highly original and diverse scenarios or instruction tasks representing genuine knowledge in the document, and convert them to golden SFT training examples inside the required JSON schema.
 
 DOCUMENT CONTENT:
-${textContent}
+${textContent}`;
 
-JSON SCHEMA REQUIREMENT:
-${schemaInstruction}`;
-
-      const effectiveDoKey = req.body.digitalOceanKey || process.env.D0_INFERENCE_KEY || process.env.DO_INFERENCE_KEY;
-      const effectiveDoUrl = req.body.digitalOceanUrl || process.env.D0_INFERENCE_URL || process.env.DO_INFERENCE_URL || 'https://inference.do-ai.run/v1';
-      const effectiveDoModel = req.body.digitalOceanModel || process.env.D0_INFERENCE_MODEL || process.env.DO_INFERENCE_MODEL || 'kimi-k2.6';
+      const effectiveDoKey = req.body.digitalOceanKey || process.env.DO_INFERENCE_KEY || process.env.D0_INFERENCE_KEY;
+      const effectiveDoUrl = normalizeDigitalOceanUrl(
+        process.env.DO_INFERENCE_URL || process.env.D0_INFERENCE_URL
+      );
+      const effectiveDoModel = req.body.digitalOceanModel || process.env.DO_INFERENCE_MODEL || process.env.D0_INFERENCE_MODEL || 'kimi-k2.6';
 
       if (!effectiveDoKey) {
         return res.status(400).json({
@@ -407,7 +430,7 @@ ${schemaInstruction}`;
         baseUrl: effectiveDoUrl,
         model: effectiveDoModel,
         systemInstruction,
-        userPrompt: userPrompt
+        userPrompt: conversionPrompt
       });
 
       res.json(JSON.parse(responseText));
@@ -481,9 +504,11 @@ Please perform the critique and deliver a refined golden alternative inside the 
 JSON SCHEMA REQUIREMENT:
 ${schemaInstruction}`;
 
-      const effectiveDoKey = req.body.digitalOceanKey || process.env.D0_INFERENCE_KEY || process.env.DO_INFERENCE_KEY;
-      const effectiveDoUrl = req.body.digitalOceanUrl || process.env.D0_INFERENCE_URL || process.env.DO_INFERENCE_URL || 'https://inference.do-ai.run/v1';
-      const effectiveDoModel = req.body.digitalOceanModel || process.env.D0_INFERENCE_MODEL || process.env.DO_INFERENCE_MODEL || 'kimi-k2.6';
+      const effectiveDoKey = req.body.digitalOceanKey || process.env.DO_INFERENCE_KEY || process.env.D0_INFERENCE_KEY;
+      const effectiveDoUrl = normalizeDigitalOceanUrl(
+        process.env.DO_INFERENCE_URL || process.env.D0_INFERENCE_URL
+      );
+      const effectiveDoModel = req.body.digitalOceanModel || process.env.DO_INFERENCE_MODEL || process.env.D0_INFERENCE_MODEL || 'kimi-k2.6';
 
       if (!effectiveDoKey) {
         return res.status(400).json({

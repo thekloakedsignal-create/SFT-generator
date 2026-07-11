@@ -18,6 +18,8 @@ export interface SFTExample {
   prompt?: string;
   response?: string;
   thought?: string; // used specifically for 'reasoning'
+  userInput?: string; // legacy/import compatibility
+  output?: string; // legacy/import compatibility
 
   // Multi-turn fields
   messages?: SFTMessage[];
