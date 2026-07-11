@@ -383,7 +383,11 @@ Do not include any markdown formatting wrappers (like \`\`\`json or \`\`\`). Do 
 
      const schemaInstruction = `
 The returned JSON must follow this exact structure:
-${schemaShape}
+${schemaShape}`;
+
+     const conversionPrompt = `${userPrompt}
+
+${schemaInstruction}
 
 Read this document carefully. Extract ${count} highly original and diverse scenarios or instruction tasks representing genuine knowledge in the document, and convert them to golden SFT training examples inside the required JSON schema.
 
@@ -406,7 +410,7 @@ ${textContent}`;
         baseUrl: effectiveDoUrl,
         model: effectiveDoModel,
         systemInstruction,
-        userPrompt: userPrompt + '\n\n' + schemaInstruction
+        userPrompt: conversionPrompt
       });
 
       res.json(JSON.parse(responseText));
