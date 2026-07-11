@@ -127,12 +127,12 @@ async function startServer() {
 
   // API Health Endpoint
   app.get('/api/health', (req, res) => {
-    const hasDoEnvKey = !!(process.env.D0_INFERENCE_KEY || process.env.DO_INFERENCE_KEY);
+    const hasDoEnvKey = !!(process.env.DO_INFERENCE_KEY || process.env.D0_INFERENCE_KEY);
     res.json({ 
       status: 'ok', 
       time: new Date().toISOString(),
       hasDoEnvKey,
-      doModel: process.env.D0_INFERENCE_MODEL || process.env.DO_INFERENCE_MODEL || 'kimi-k2.6'
+      doModel: process.env.DO_INFERENCE_MODEL || process.env.D0_INFERENCE_MODEL || 'kimi-k2.6'
     });
   });
 
@@ -158,13 +158,13 @@ async function startServer() {
       }
 
       // Key/URL/Model are stored in system environment
-      const effectiveDoKey = process.env.D0_INFERENCE_KEY || process.env.DO_INFERENCE_KEY;
+      const effectiveDoKey = process.env.DO_INFERENCE_KEY || process.env.D0_INFERENCE_KEY;
       if (!effectiveDoKey) {
         return res.status(500).json({ error: 'System configuration error: DO_INFERENCE_KEY (or D0_INFERENCE_KEY) missing.' });
       }
       const rawDoUrl = process.env.DO_INFERENCE_URL || process.env.D0_INFERENCE_URL;
       const effectiveDoUrl = normalizeDigitalOceanUrl(rawDoUrl);
-      const effectiveDoModel = process.env.D0_INFERENCE_MODEL || process.env.DO_INFERENCE_MODEL || 'kimi-k2.6';
+      const effectiveDoModel = process.env.DO_INFERENCE_MODEL || process.env.D0_INFERENCE_MODEL || 'kimi-k2.6';
 
       let schemaInstruction = '';
       if (templateType === 'user-response') {
@@ -399,13 +399,13 @@ Do not include any markdown formatting wrappers (like \`\`\`json or \`\`\`). Do 
   ]
 }`}`;
 
-     const schemaInstruction = `
+     const ocrSchemaInstruction = `
 The returned JSON must follow this exact structure:
 ${schemaExample}`;
 
      const conversionPrompt = `${userPrompt}
 
-${schemaInstruction}
+${ocrSchemaInstruction}
 
 Read this document carefully. Extract ${count} highly original and diverse scenarios or instruction tasks representing genuine knowledge in the document, and convert them to golden SFT training examples inside the required JSON schema.
 
@@ -414,7 +414,7 @@ ${textContent}`;
 
       const effectiveDoKey = req.body.digitalOceanKey || process.env.DO_INFERENCE_KEY || process.env.D0_INFERENCE_KEY;
       const effectiveDoUrl = normalizeDigitalOceanUrl(
-        req.body.digitalOceanUrl || process.env.DO_INFERENCE_URL || process.env.D0_INFERENCE_URL
+        process.env.DO_INFERENCE_URL || process.env.D0_INFERENCE_URL
       );
       const effectiveDoModel = req.body.digitalOceanModel || process.env.DO_INFERENCE_MODEL || process.env.D0_INFERENCE_MODEL || 'kimi-k2.6';
 
@@ -504,11 +504,11 @@ Please perform the critique and deliver a refined golden alternative inside the 
 JSON SCHEMA REQUIREMENT:
 ${schemaInstruction}`;
 
-      const effectiveDoKey = req.body.digitalOceanKey || process.env.D0_INFERENCE_KEY || process.env.DO_INFERENCE_KEY;
+      const effectiveDoKey = req.body.digitalOceanKey || process.env.DO_INFERENCE_KEY || process.env.D0_INFERENCE_KEY;
       const effectiveDoUrl = normalizeDigitalOceanUrl(
-        req.body.digitalOceanUrl || process.env.DO_INFERENCE_URL || process.env.D0_INFERENCE_URL
+        process.env.DO_INFERENCE_URL || process.env.D0_INFERENCE_URL
       );
-      const effectiveDoModel = req.body.digitalOceanModel || process.env.D0_INFERENCE_MODEL || process.env.DO_INFERENCE_MODEL || 'kimi-k2.6';
+      const effectiveDoModel = req.body.digitalOceanModel || process.env.DO_INFERENCE_MODEL || process.env.D0_INFERENCE_MODEL || 'kimi-k2.6';
 
       if (!effectiveDoKey) {
         return res.status(400).json({
